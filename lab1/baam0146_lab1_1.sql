@@ -3,11 +3,10 @@
 --műfajú (@pMufajNev) film az adott studióban (@StudioNev) , akkor a @pOut kimeneti paraméter értékét
 --állítsuk -2-re, ellenkező esetben 0-ra!
 GO
-SET NOCOUNT ON;
-GO
 CREATE PROCEDURE MufajStudio (@pMufajNev VARCHAR(30), @StudioNev VARCHAR(30), @pOut INT OUT)
 AS
 BEGIN
+	SET NOCOUNT ON;
 	DECLARE @atlag INT
 
 	SET @atlag = (
@@ -32,17 +31,20 @@ DECLARE @kimenet int
 EXEC MufajStudio 'Sci-fi', 'Gleichner-Okuneva', @pOut = @kimenet OUT
 PRINT @kimenet
 
+EXEC MufajStudio 'Comedy', 'Heathcote-Frami', @pOut = @kimenet OUT
+PRINT @kimenet
+
+
 --2.Írjunk  tárolt eljárást VAGY függvényt, melynek bemenő paraméterei:
 --@pSzulHonap-int, @pKoltseg-int, @pDatum1-date, @pDatum2-date típusúak! A tárolt eljárás/függvény térítse
 --vissza (függvény esetén-int típusú változóban, eljárás esetén-kimeneti paraméterben), hogy az adott hónapban
 --(@pSzulDatum) született színészek, @pDatum1 és @pDatum2 között vetített filmje(i) hány százalékának költsége
 --kisebb, mint @pKoltseg!
 GO
-SET NOCOUNT ON;
-GO
 CREATE PROCEDURE SzuletesVetites(@pSzulHonap INT, @pKoltseg INT, @pDatum1 DATE, @pDatum2 DATE, @pOut INT OUT)
 AS
 BEGIN
+	SET NOCOUNT ON;
 	SELECT DISTINCT	f.FilmID INTO #T1
 	FROM	Vetites v, Szineszek szi, Szerepel sze, Filmek f
 	WHERE	szi.SzineszID = sze.SzineszID
@@ -73,6 +75,9 @@ GO
 DECLARE @kimenet int
 EXEC SzuletesVetites 1, 80000, '1950-01-01', '2018-12-21', @pOut = @kimenet OUT
 
+EXEC SzuletesVetites 1, 70000, '2017-01-01', '2018-12-21', @pOut = @kimenet OUT
+
+
 --3.(2p) Írjunk tárolt eljárást, melynek bemenő paraméterei: @pSzineszNev, @pStudiokSzama, @pAtlagKoltseg,
 --@pVetitesSzam. Az eljárás segítségével adjuk meg az(oka)t a színész(eke)t, aki(k) teljesíti(k) a következő
 --feltételeket:
@@ -83,11 +88,10 @@ EXEC SzuletesVetites 1, 80000, '1950-01-01', '2018-12-21', @pOut = @kimenet OUT
 --több, mint @pVetitesSzam alkalommal vetítik azon filmjeiket, melyekben szerepelnek és amelyek költsége
 --a legkisebb.
 GO
-SET NOCOUNT ON;
-GO
 CREATE PROCEDURE Szineszekrol (@pSzineszNev VARCHAR(30), @pStudiokSzama INT, @pAtlagKoltseg INT, @pVetitesSzam INT)
 AS
 BEGIN
+	SET NOCOUNT ON;
 	-- azon mufajok, amilyen mufaju filmekben szerepelt @pSzineszNev nevu szinesz
 	SELECT	DISTINCT MufajID INTO #T1
 	FROM	Szineszek szi, Szerepel sze, Filmek f
@@ -164,7 +168,9 @@ BEGIN
 END
 GO
 
-EXEC Szineszekrol 'Rozella Willcot', 2, 58000, 3
+
+EXEC Szineszekrol 'Rozella Willcot', 2, 58000, 1
+EXEC Szineszekrol 'Rozella Willcot', 1, 68000, 3
 
 
 --4.Írjunk tárolt eljárást, melynek bemeneti paramétere: @pDatum date típusú! A tárolt eljárás segítségével
@@ -173,11 +179,10 @@ EXEC Szineszekrol 'Rozella Willcot', 2, 58000, 3
 --paraméter (@pOut-int típusú) értékét állítsuk -1-re, ellenkező esetben a kimeneti paraméter értéke legyen a
 --feltételnek eleget tevő film(ek) átlagköltsége!
 GO
-SET NOCOUNT ON;
-GO
 CREATE PROCEDURE FilmekDatumon(@pDatum DATE, @pOut INT OUT)
 AS
 BEGIN
+	SET NOCOUNT ON;
 	-- azon filmek id-ja, amelyeket @pDatum datumon vetitenek
 	SELECT	DISTINCT FilmID INTO #T1
 	FROM	Vetites
@@ -212,13 +217,10 @@ GO
 
 DECLARE @kimenet int
 EXEC FilmekDatumon '2016-11-07', @pOut = @kimenet OUT
-select @kimenet
-
-select Datum from Vetites where FilmID = 4
+print @kimenet
 
 
---5.Hozzunk létre egy új táblát: FilmekKoltseg_Log(ID, Idopont, Muvelet, FilmID, FilmCim, RegiKoltseg, UjKoltseg)
-
+--5. a. Hozzunk létre egy új táblát: FilmekKoltseg_Log(ID, Idopont, Muvelet, FilmID, FilmCim, RegiKoltseg, UjKoltseg)
 CREATE TABLE FilmekKoltseg_Log(
 	ID			INT NOT NULL,
 	FilmID		INT FOREIGN KEY REFERENCES Filmek(FilmID) DEFAULT NULL,
@@ -229,11 +231,11 @@ CREATE TABLE FilmekKoltseg_Log(
 	UjKoltseg	INT
 )
 
-GO
-SET NOCOUNT ON;
+--b. Oldjuk meg, hogy a Filmek táblából való törlés esetén a FilmekKoltseg_Log tábla FilmID mezőjének értéke NULL-ra módosuljon!
 GO
 CREATE TRIGGER TorlesFilmekbol ON Filmek INSTEAD OF DELETE AS
 BEGIN
+	SET NOCOUNT ON;
 	UPDATE	FilmekKoltseg_Log
 	SET		FilmID = NULL
 	WHERE	FilmID = (SELECT FilmID FROM DELETED)
@@ -242,11 +244,13 @@ BEGIN
 END
 GO
 
-GO
-SET NOCOUNT ON;
+--c. Írjunk UPDATE triggert, mely a Filmek tábla Koltseg mezőjének módosításakor beszúr egy új
+--sort a FilmekKoltseg_Log táblába. Az időpont legyen a módosítás időpontja, művelet szövege:
+--‘koltseg növelése’ vagy ‘koltseg csökkentése’, Regikoltseg-régi érték, Ujkoltseg-új érték.
 GO
 CREATE TRIGGER ModositasFilmekben ON Filmek AFTER UPDATE AS
 BEGIN
+	SET NOCOUNT ON;
 	DECLARE @regiKoltseg INT, @ujKoltseg INT, @muvelet VARCHAR(50),
 		@filmID INT, @filmCim VARCHAR(50), @ujID INT, @lastID INT
 
@@ -277,9 +281,6 @@ BEGIN
 END
 GO
 
-select * from filmek
-select * from FilmekKoltseg_Log
-
 
 insert into filmek(FilmID, FilmCim, Koltseg, MegjEv, StudioID, MufajID)
 values (30, 'Avengers', 2000000, 2016, 5, 1)
@@ -288,4 +289,10 @@ update Filmek
 set Koltseg = 650000
 where FilmID = 30
 
+update Filmek
+set Koltseg = 1750000
+where FilmID = 30
+
 delete from filmek where filmid = 30
+
+select * from FilmekKoltseg_Log
